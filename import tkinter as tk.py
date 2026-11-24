@@ -12,6 +12,9 @@ root.title("냥집사")
 root.geometry(f"{WIDTH}x{HEIGHT}")
 root.resizable(False, False)
 
+fur_var = tk.StringVar(value="흰색")
+eye_var = tk.StringVar(value="파란색")
+
 # ------------------------
 # 상태
 # ------------------------
@@ -80,18 +83,72 @@ def make_fallback_cat(state):
 
     return image
 
-def load_img(path, fallback_state):
+def load_source_img(path, fallback_state):
     try:
-        image = Image.open(path).convert("RGBA")
+        return Image.open(path).convert("RGBA")
     except (FileNotFoundError, OSError):
-        image = make_fallback_cat(fallback_state)
+        return make_fallback_cat(fallback_state).resize((424, 617))
+
+sprite_sources = {
+    "idle": load_source_img(ASSET_DIR / "cat_idle.png", "idle"),
+    "happy": load_source_img(ASSET_DIR / "cat_happy.png", "happy"),
+    "sleep": load_source_img(ASSET_DIR / "cat_sleep.png", "sleep"),
+    "walk1": load_source_img(ASSET_DIR / "cat_walk1.png", "walk1"),
+    "walk2": load_source_img(ASSET_DIR / "cat_walk2.png", "walk2"),
+}
+custom_sprites = {}
+
+FUR_COLORS = {
+    "흰색": "#F4F1ED",
+    "치즈색": "#E8A33D",
+    "회색": "#A7A7B2",
+    "갈색": "#9A6847",
+    "검정색": "#202020",
+}
+EYE_COLORS = {
+    "파란색": "#3B8FE8",
+    "초록색": "#39A96B",
+    "호박색": "#E7A52B",
+    "보라색": "#9B69D3",
+}
+OUTLINE_COLOR = "#19182A"
+
+
+def customize_sprite(source, state):
+    image = source.copy()
+    fur_color = FUR_COLORS[fur_var.get()]
+    fur_rgb = tuple(int(fur_color[index:index + 2], 16) for index in (1, 3, 5))
+    pixels = image.load()
+
+    for y in range(image.height):
+        for x in range(image.width):
+            red, green, blue, alpha = pixels[x, y]
+            if alpha and max(red, green, blue) - min(red, green, blue) < 20 and min(red, green, blue) > 175:
+                brightness = (red + green + blue) / 765
+                pixels[x, y] = (
+                    int(fur_rgb[0] * brightness),
+                    int(fur_rgb[1] * brightness),
+                    int(fur_rgb[2] * brightness),
+                    alpha,
+                )
+
+    draw = ImageDraw.Draw(image)
+
+    if state != "sleep":
+        eye_color = EYE_COLORS[eye_var.get()]
+        draw.ellipse((145, 125, 159, 141), fill=eye_color, outline=OUTLINE_COLOR, width=2)
+        draw.ellipse((184, 125, 198, 141), fill=eye_color, outline=OUTLINE_COLOR, width=2)
+        draw.ellipse((150, 128, 154, 137), fill="#FFFFFF")
+        draw.ellipse((189, 128, 193, 137), fill="#FFFFFF")
+
     return ImageTk.PhotoImage(image.resize((280, 280), Image.Resampling.LANCZOS))
 
-idle_img = load_img(ASSET_DIR / "cat_idle.png", "idle")
-happy_img = load_img(ASSET_DIR / "cat_happy.png", "happy")
-sleep_img = load_img(ASSET_DIR / "cat_sleep.png", "sleep")
-walk1_img = load_img(ASSET_DIR / "cat_walk1.png", "walk1")
-walk2_img = load_img(ASSET_DIR / "cat_walk2.png", "walk2")
+
+def refresh_customization(*_):
+    custom_sprites.clear()
+    for state, source in sprite_sources.items():
+        custom_sprites[state] = customize_sprite(source, state)
+    update_cat_state()
 
 # ------------------------
 # 배경
@@ -160,8 +217,26 @@ shadow = canvas.create_oval(
 cat = canvas.create_image(
     cat_x,
     cat_y,
-    image=idle_img
+    image=""
 )
+
+# ------------------------
+# 고양이 꾸미기
+# ------------------------
+
+custom_frame = tk.Frame(root, bg="#FFF8EF", padx=10, pady=4)
+custom_options = (
+    ("털 색", fur_var, tuple(FUR_COLORS)),
+    ("눈 색", eye_var, tuple(EYE_COLORS)),
+)
+
+for column, (label, variable, choices) in enumerate(custom_options):
+    option_frame = tk.Frame(custom_frame, bg="#FFF8EF")
+    option_frame.grid(row=0, column=column, padx=7)
+    tk.Label(option_frame, text=label, bg="#FFF8EF", font=("맑은 고딕", 9, "bold")).pack()
+    tk.OptionMenu(option_frame, variable, *choices, command=refresh_customization).pack()
+
+canvas.create_window(500, 165, window=custom_frame)
 
 # ------------------------
 # UI 업데이트
@@ -203,13 +278,13 @@ def set_cat_image(img):
 def update_cat_state():
 
     if sleeping:
-        set_cat_image(sleep_img)
+        set_cat_image(custom_sprites["sleep"])
         return
 
     if happy >= 70:
-        set_cat_image(happy_img)
+        set_cat_image(custom_sprites["happy"])
     else:
-        set_cat_image(idle_img)
+        set_cat_image(custom_sprites["idle"])
 
 # ------------------------
 # 하트
@@ -284,9 +359,7 @@ def blink():
         root.after(3000, blink)
         return
 
-    old = canvas.itemcget(cat, "image")
-
-    set_cat_image(idle_img)
+    set_cat_image(custom_sprites["idle"])
 
     root.after(
         150,
@@ -326,10 +399,10 @@ def walk():
         walk_dir = 1
 
     if walk_frame == 0:
-        canvas.itemconfig(cat, image=walk1_img)
+        canvas.itemconfig(cat, image=custom_sprites["walk1"])
         walk_frame = 1
     else:
-        canvas.itemconfig(cat, image=walk2_img)
+        canvas.itemconfig(cat, image=custom_sprites["walk2"])
         walk_frame = 0
 
     root.after(
@@ -414,7 +487,7 @@ def sleep_cat():
 
     canvas.itemconfig(
         cat,
-        image=sleep_img
+        image=custom_sprites["sleep"]
     )
 
 # ------------------------
@@ -536,6 +609,7 @@ canvas.tag_bind(
 # 시작
 # ------------------------
 
+refresh_customization()
 update_ui()
 update_cat_state()
 
